@@ -1,0 +1,17 @@
+( rank:,12, iter:,11, lambda:,0.3, blocks:,4, seed:,4)
+Mean Squared Error = 1.0862116001923479
+
+( rank:,12, iter:,13, lambda:,0.3, blocks:,1, seed:,1)
+Mean Squared Error = 1.0849658192146474
+
+( rank:,15, iter:,20, lambda:,0.3, blocks:,-1, seed:,1)
+Mean Squared Error = 1.0836513235569016
+
+( rank:,14, iter:,20, lambda:,0.3, blocks:,-1, seed:,2)
+Mean Squared Error = 1.0767351806084275
+
+( rank:,12, iter:,20, lambda:,0.3, blocks:,-1, seed:,1)
+Mean Squared Error = 1.0755463512902195
+
+( rank:,15, iter:,20, lambda:,0.3, blocks:,-1, seed:,2)
+Mean Squared Error = 1.0755162537810259
