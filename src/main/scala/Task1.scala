@@ -119,7 +119,7 @@ object Task1 {
       err * err
     }.mean()
     val RMSE = math.sqrt(MSE)
-    println(s"Mean Squared Error = $RMSE")
+    println(s"RMSE: = $RMSE")
 
     val user_int_id_map = user_id_map.map(_.swap)
     val business_int_id_map = business_id_map.map(_.swap)

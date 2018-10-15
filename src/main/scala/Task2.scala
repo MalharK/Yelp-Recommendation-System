@@ -191,6 +191,7 @@ object Task2 {
 
   def printBaseLine(ratesAndPreds: RDD[((String, String), (Float, Double))]): Unit = {
     val baseLine = ratesAndPreds
+      .repartition(8)
       .mapPartitions(generateBaseDict)
       .reduceByKey((a, b) => a + b)
       .collect().toMap
@@ -202,7 +203,7 @@ object Task2 {
   }
 
 
-  def saveOutput(ratesAndPreds: Array[((String, String), (Float, Double))]): Unit = {
+  def saveOutput(ratesAndPreds: RDD[((String, String), (Float, Double))]): Unit = {
     val predictionPairs = ratesAndPreds.sortBy(_._1._2).sortBy(_._1._1)
 
     var predictionOutput = new ListBuffer[String]()
@@ -283,20 +284,15 @@ object Task2 {
     val userRatingsPredictions = testingRddWithRatings
       .map(userBusinessRatings =>
         calculateBusinessPrediction(userBusinessRatings, userAndBusinessMap, userBusinessRatingMap, businessAndUsersMap, pearsonCorrelationMap))
-      .collect()
+      .cache()
 //    println("Predictions generated")
 
-    val test = userRatingsPredictions.map { case ((user, business), (r1, r2)) =>
-      val err = r1 - r2
-      err * err
-    }
-    val MSE = userRatingsPredictions.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / test.length
+    val MSE = userRatingsPredictions.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / userRatingsPredictions.count()
 
     //Printing the baseline
-//    printBaseLine(userRatingsPredictions)
+    printBaseLine(userRatingsPredictions)
     println("RMSE: " + Math.sqrt(MSE).toString)
-    println("Total time: " + (System.nanoTime() - startTime) / 1e9d + " sec")// Saving the output in text file
     saveOutput(userRatingsPredictions)
-
+    println("Total time: " + (System.nanoTime() - startTime) / 1e9d + " sec")// Saving the output in text file
   }
 }
