@@ -4,7 +4,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 object Task2 {
 
@@ -204,14 +204,14 @@ object Task2 {
 
 
   def saveOutput(ratesAndPreds: RDD[((String, String), (Float, Double))]): Unit = {
-    val predictionPairs = ratesAndPreds.sortBy(_._1._2).sortBy(_._1._1)
+    val predictionPairs = ratesAndPreds.sortBy(_._1._2).sortBy(_._1._1).collect()
 
-    var predictionOutput = new ListBuffer[String]()
+
+    var predictionOutput = new ArrayBuffer[String]()
     for (predictionPair <- predictionPairs) {
       predictionOutput += predictionPair._1._1.toString + ", " + predictionPair._1._2.toString + ", " + predictionPair._2._2.toString
     }
 
-    print(predictionOutput.size)
     val finalOutput = predictionOutput.mkString("\n")
     val pw = new PrintWriter(new File("Malhar_Kulkarni_UserBasedCF.txt"))
     pw.write(finalOutput)
