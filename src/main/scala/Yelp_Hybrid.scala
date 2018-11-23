@@ -66,7 +66,7 @@ object Yelp_Hybrid {
     val start_time = System.nanoTime()
 
     val spark = SparkSession.builder()
-      .master("local")
+      .master("local[*]")
       .appName("ALSrecommender")
       .getOrCreate()
 
@@ -131,27 +131,9 @@ object Yelp_Hybrid {
     val modelBasedRatings:RDD[((String, String), Double)] = predictions.map(prediction => ((user_int_id_map(prediction._1._1), business_int_id_map(prediction._1._2)), prediction._2))
     val userBasedRatingsPredictions:RDD[((String, String), (Float, Double))] = generate_user_based_CF(spark.sparkContext, training_file_path, testing_file_path)
     val joined: RDD[((String, String), (Double, (Float, Double)))] = modelBasedRatings.join(userBasedRatingsPredictions)
-//    val hybrid = joined.map(X=>(X._1, (X._2._2._1, if (X._2._2._2 <= 1) X._2._1 else if(X._2._2._2 > X._2._2._1) Math.round(X._2._2._2) else Math.ceil(X._2._2._2))))
-//    val hybrid = joined.map(X=>(X._1, (X._2._2._1, if (X._2._2._2 <= 1) X._2._1 else (X._2._2._2 + X._2._1)/2.0)))
-    val hybrid = joined.map(X=>(X._1, (X._2._2._1, if (X._2._2._2 <= 1) X._2._1 else (X._2._2._2 + X._2._1)/2.0)))
+    val hybrid = joined.map(X=>(X._1, (X._2._2._1, if (X._2._2._2 <= 0) X._2._1 else (X._2._2._2 + X._2._1)/2.0)))
     val RMSE = Math.sqrt(hybrid.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / userBasedRatingsPredictions.count())
     println("RMSE: " + RMSE.toString)
-
-    val hybrid1 = joined.map(X=>(X._1, (X._2._2._1, if (X._2._2._2 <= 1) Math.round(X._2._1) else Math.round((X._2._2._2 + X._2._1)/2.0))))
-    val RMSE1 = Math.sqrt(hybrid1.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / userBasedRatingsPredictions.count())
-    println("RMSE: " + RMSE1.toString)
-
-    val hybrid2 = joined.map(X=>(X._1, (X._2._2._1, if (X._2._2._2 <= 1) Math.round(X._2._1) else (X._2._2._2 + X._2._1)/2.0)))
-    val RMSE2 = Math.sqrt(hybrid2.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / userBasedRatingsPredictions.count())
-    println("RMSE: " + RMSE2.toString)
-
-//    2.8 RMSE: 1.0394199603233192
-//    RMSE: 1.0786556905979385
-//    RMSE: 1.0398110135416831
-
-//    2.5 RMSE: 1.0394199603233192
-//    RMSE: 1.0786556905979385
-//    RMSE: 1.0398110135416831
 
 
     //    // Generating expected output of the form "User, Business, Predicted Rating"
@@ -259,7 +241,7 @@ object Yelp_Hybrid {
 
     // Get the list of users who have rated business_id
     if (!businessAndUsersMap.contains(toPredictMovieId)) {
-      return ((predictForUserId, toPredictMovieId), (actualRating, -1))
+      return ((predictForUserId, toPredictMovieId), (actualRating, predictForUserAverageRating))
     }
 
     val corUserList = businessAndUsersMap.getOrElse(toPredictMovieId, Set.empty)
@@ -288,29 +270,28 @@ object Yelp_Hybrid {
         }
       }
     }
-
     val corUsersNumeratorComponentsSum: Float = corUsersNumeratorComponents.sum
     val corUsersDenominatorComponentSum: Float = corUsersDenominatorComponents.sum
+    var prediction: Double = 0.0
+    if (corUsersNumeratorComponentsSum != 0 && corUsersDenominatorComponentSum != 0) {
+      prediction = predictForUserAverageRating + (corUsersNumeratorComponentsSum / corUsersDenominatorComponentSum)
+      //prediction = if (prediction > userBusinessRatings._2) Math.floor(prediction) else prediction
+    } else {
+      prediction = predictForUserAverageRating
+    }
 
     //    println("Cor user num: " + corUsersNumeratorComponentsSum)
     //    println("Cor user num: " + corUsersDenominatorComponentSum)
-
-    var prediction: Double = 0.0
-    if (corUsersNumeratorComponentsSum == 0 || corUsersDenominatorComponentSum == 0) {
-      prediction = predictForUserAverageRating
-    } else {
-      prediction = predictForUserAverageRating + (corUsersNumeratorComponentsSum / corUsersDenominatorComponentSum)
-    }
+    //    prediction cannot be larger than 5 and cannot be smaller than 1
+    //    values obtained from experimenting with output RMSE
 
     if (prediction > 5) {
-      prediction = 5.0
+      prediction = 4.7
     }
     if (prediction <= 1) {
-      prediction = 1.0
+      prediction = 2.8
     }
     ((predictForUserId, toPredictMovieId), (actualRating, prediction))
-    //   0.8 rmse knowing ceiling or floor
-    //    ((predictForUserId, toPredictMovieId), (actualRating, if (actualRating > prediction) Math.ceil(prediction) else Math.floor(prediction)))
   }
 
   def generateBaseDict(ratesAndPredictionChunk: Iterator[((String, String), (Float, Double))]): Iterator[(String, Int)] = {
