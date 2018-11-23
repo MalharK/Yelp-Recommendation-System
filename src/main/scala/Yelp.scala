@@ -1,16 +1,21 @@
 import java.io.{File, PrintWriter}
 
+import Yelp_Model_based.{adjust_rating, assign_int_business_id, assign_int_user_id}
+import org.apache.spark.mllib.recommendation.{ALS, Rating}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
-object Task2 {
+object Yelp {
 
   // --------------------------------------------------
   // Utility functions required for the combiner
   // --------------------------------------------------
+
+  //RMSE to beat 1.0523
+
   def intToSet(x: String): Set[String] = Set(x)
 
   def addIntToSet(acc: Set[String], x: String): Set[String] = acc.union(Set(x))
@@ -62,14 +67,14 @@ object Task2 {
       return ((user1, user2), -1)
     }
 
-    val user1BusinessRatings = commonBusinesses.map(BusinessId => userBusinessRatingsMap((user1, BusinessId))).toList
-    val user2BusinessRatings = commonBusinesses.map(BusinessId => userBusinessRatingsMap((user2, BusinessId))).toList
+    val user1BusinessRatings = commonBusinesses.map(BusinessId => userBusinessRatingsMap((user1, BusinessId))).toArray
+    val user2BusinessRatings = commonBusinesses.map(BusinessId => userBusinessRatingsMap((user2, BusinessId))).toArray
 
     ((user1, user2), pearsonCorrelation(user1BusinessRatings, user2BusinessRatings))
   }
 
 
-  def pearsonCorrelation(user1BusinessRatings: List[Float], user2BusinessRatings: List[Float], log: Boolean = false): Double = {
+  def pearsonCorrelation(user1BusinessRatings: Array[Float], user2BusinessRatings: Array[Float], log: Boolean = false): Double = {
     val vector1Sum = user1BusinessRatings.sum
     val vector2Sum = user2BusinessRatings.sum
 
@@ -105,19 +110,18 @@ object Task2 {
       .filter(userMovie => userBusinessRatingMap.contains((predictForUserId, userMovie)))
       .map(userMovie => userBusinessRatingMap((predictForUserId, userMovie)))
 
-
-    val predictForUserAverageRating = if(userRatingList.isEmpty)  3.0 else userRatingList.sum / userRatingList.size
+    val predictForUserAverageRating = if (userRatingList.isEmpty) 2.8 else userRatingList.sum / userRatingList.size.toFloat
 
     // Get the list of users who have rated movie_id
     if (!businessAndUsersMap.contains(toPredictMovieId)) {
-      return ((predictForUserId, toPredictMovieId), (actualRating, predictForUserAverageRating))
+      return ((predictForUserId, toPredictMovieId), (actualRating, -1))
     }
 
     val corUserList = businessAndUsersMap.getOrElse(toPredictMovieId, Set.empty)
 
     // Get the pearson correlation values of these users with user_id
-    var corUsersNumeratorComponents: List[Float] = List.empty
-    var corUsersDenominatorComponents: List[Float] = List.empty
+    var corUsersNumeratorComponents: ArrayBuffer[Float] = ArrayBuffer.empty
+    var corUsersDenominatorComponents: ArrayBuffer[Float] = ArrayBuffer.empty
 
     for (corUser <- corUserList) {
       // calculating correlated user's average rating
@@ -133,14 +137,18 @@ object Task2 {
         val pearsonCorForCorUser = pearsonCorrelationMap((predictForUserId, corUser))
         if (pearsonCorForCorUser > 0) {
           val corUserNumeratorComponent = (userBusinessRatingMap((corUser, toPredictMovieId)) - corUserAvgRating) * pearsonCorForCorUser
-          corUsersDenominatorComponents :+ Math.abs(pearsonCorForCorUser)
-          corUsersNumeratorComponents :+ corUserNumeratorComponent
+          corUsersDenominatorComponents += Math.abs(pearsonCorForCorUser).toFloat
+          corUsersNumeratorComponents += corUserNumeratorComponent.toFloat
+//          println(corUsersDenominatorComponents)
         }
       }
     }
 
     val corUsersNumeratorComponentsSum: Float = corUsersNumeratorComponents.sum
     val corUsersDenominatorComponentSum: Float = corUsersDenominatorComponents.sum
+
+//    println("Cor user num: " + corUsersNumeratorComponentsSum)
+//    println("Cor user num: " + corUsersDenominatorComponentSum)
 
     var prediction: Double = 0.0
     if (corUsersNumeratorComponentsSum == 0 || corUsersDenominatorComponentSum == 0) {
@@ -152,8 +160,12 @@ object Task2 {
     if (prediction > 5) {
       prediction = 5.0
     }
-
-    ((predictForUserId, toPredictMovieId), (actualRating, prediction))
+    if (prediction <= 1) {
+      prediction = 1.0
+    }
+    ((predictForUserId, toPredictMovieId), (actualRating, Math.round(prediction)))
+ //   0.8 rmse knowing ceiling or floor
+//    ((predictForUserId, toPredictMovieId), (actualRating, if (actualRating > prediction) Math.ceil(prediction) else Math.floor(prediction)))
   }
 
   def generateBaseDict(ratesAndPredictionChunk: Iterator[((String, String), (Float, Double))]): Iterator[(String, Int)] = {
@@ -213,7 +225,7 @@ object Task2 {
     }
 
     val finalOutput = predictionOutput.mkString("\n")
-    val pw = new PrintWriter(new File("Malhar_Kulkarni_UserBasedCF.txt"))
+    val pw = new PrintWriter(new File("Malhar_Kulkarni_Yelp_challenge.txt"))
     pw.write(finalOutput)
     pw.close()
   }
@@ -222,22 +234,22 @@ object Task2 {
   def main(args: Array[String]): Unit = {
     val startTime = System.nanoTime
 
-    //    val ratingFilePath = args(0)
-    //    val testingFilePath = args(1)
+    val ratingFilePath = args(0)
+    val testingFilePath = args(1)
 
     // Setting up the spark context
     val sparkConf = new SparkConf().setAppName("UserBasedCollaborativeFiltering").setMaster("local[*]")
     val sc = new SparkContext(sparkConf)
     sc.setLogLevel("WARN")
 
-    val text_train = sc.textFile("train_review.csv")
+    val text_train = sc.textFile(ratingFilePath)
     val header_train = text_train.first()
     val trainingRdd = text_train
       .filter(line => line != header_train)
       .map(line => line.split(","))
       .map(elements => ((elements(0), elements(1)), elements(2).toFloat))
 
-    val text_test = sc.textFile("test_review.csv")
+    val text_test = sc.textFile(testingFilePath)
     val header_test = text_test.first()
     val testingRddWithRatings = text_test
       .filter(line => line != header_test)
@@ -254,7 +266,7 @@ object Task2 {
       .combineByKey(intToSet, addIntToSet, unionTwoIntSet)
     val userAndBusinessList: Array[(String, Set[String])] = userBusinessRdd.collect()
     var userAndBusinessMap = collection.mutable.Map(userAndBusinessList: _*)
-//    println("User and business map generated")
+    //    println("User and business map generated")
 
 
     // Business and their corresponding users who have rated them
@@ -263,7 +275,7 @@ object Task2 {
       .combineByKey(intToSet, addIntToSet, unionTwoIntSet)
     val businessAndUsersList: Array[(String, Set[String])] = businessUsersRdd.collect()
     var businessAndUsersMap = collection.mutable.Map(businessAndUsersList: _*)
-//    println("Businesses and users map generated")
+    //    println("Businesses and users map generated")
 
     // Calculating pearson correlation matrix
     // (u1, u2) --> Their pearson correlation
@@ -279,20 +291,68 @@ object Task2 {
       .collect()
       .toMap
 
-//    println("Pearson correlations generated")
+    //    println("Pearson correlations generated")
 
-    val userRatingsPredictions = testingRddWithRatings
+    val userRatingsPredictions: RDD[((String, String), (Float, Double))] = testingRddWithRatings
       .map(userBusinessRatings =>
         calculateBusinessPrediction(userBusinessRatings, userAndBusinessMap, userBusinessRatingMap, businessAndUsersMap, pearsonCorrelationMap))
       .cache()
-//    println("Predictions generated")
+    //    println("Predictions generated")
 
-    val MSE = userRatingsPredictions.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / userRatingsPredictions.count()
+
+    /*
+    Code for Model based
+     */
+    val text_train_model_based = sc.textFile(ratingFilePath)
+    val header = text_train_model_based.first()
+    val ratings = text_train_model_based
+      .filter(line => !line.equals(header))
+      .map(line => line.split(","))
+      .map(attributes => Rating(assign_int_user_id(attributes(0).trim), assign_int_business_id(attributes(1).trim), attributes(2).trim.toDouble))
+    ratings.collect()
+
+
+    // Evaluate the model on rating data
+    val text_test_model_based = sc.textFile(testingFilePath)
+    val test_ratings = text_test_model_based
+      .filter(line => !line.equals(header))
+      .map(line => line.split(","))
+      .map(attributes => Rating(assign_int_user_id(attributes(0).trim), assign_int_business_id(attributes(1).trim), attributes(2).trim.toDouble))
+    test_ratings.collect()
+    // Build the recommendation model using ALS
+    val rank = 2 // Can be changed for better performance
+    val num_iterations = 25 // Can be changed for better performance
+    val lambda_value = 0.2229 // Can be changed for better performance
+    val blocks = 2 // Can be changed for better performance
+    val seed = 2 // Can be changed for better performance
+
+    val model = ALS.train(ratings = ratings,
+      rank = rank,
+      iterations = num_iterations,
+      lambda = lambda_value,
+      blocks = blocks,
+      seed = seed)
+
+    val usersProducts = test_ratings.map { case Rating(user, product, rate) => (user, product) }
+
+    val predictions = model.predict(usersProducts).map { case Rating(user, product, rate) => ((user, product), adjust_rating(rate)) }
+
+    val ratesAndPreds = test_ratings.map { case Rating(user, product, rate) => ((user, product), rate) }.join(predictions)
+
+
+
+    val RMSE = Math.sqrt(userRatingsPredictions.map(userPred => (userPred._2._1 - userPred._2._2) * (userPred._2._1 - userPred._2._2)).sum / userRatingsPredictions.count())
+
+//    val ratingsPred =
+//      userRatingsPredictions.map(userPred => userPred._1._1 + "," + userPred._1._2 + "," + userPred._2._1 + "," + userPred._2._2).collect().mkString("\n")
+//    val pw = new PrintWriter(new File("ratingsAnalysis.txt"))
+//    pw.write(ratingsPred)
+//    pw.close()
 
     //Printing the baseline
-    printBaseLine(userRatingsPredictions)
-    println("RMSE: " + Math.sqrt(MSE).toString)
-    saveOutput(userRatingsPredictions)
-    println("Total time: " + (System.nanoTime() - startTime) / 1e9d + " sec")// Saving the output in text file
+    //    printBaseLine(userRatingsPredictions)
+    println("RMSE: " + RMSE.toString)
+    //    saveOutput(userRatingsPredictions)
+    println("Time: " + (System.nanoTime() - startTime) / 1e9d + " sec") // Saving the output in text file
   }
 }

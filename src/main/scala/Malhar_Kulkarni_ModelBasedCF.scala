@@ -1,13 +1,12 @@
 import java.io.{File, PrintWriter}
 
-import org.apache.spark.SparkContext
 import org.apache.spark.mllib.recommendation.ALS
 import org.apache.spark.mllib.recommendation.Rating
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 
 import collection.mutable
 
-object Task1 {
+object Malhar_Kulkarni_ModelBasedCF {
 
   val user_id_map: mutable.Map[String, Int] = mutable.Map[String, Int]()
   val business_id_map: mutable.Map[String, Int] = mutable.Map[String, Int]()
@@ -70,24 +69,25 @@ object Task1 {
 
     spark.sparkContext.setLogLevel("WARN")
 
-    //    val input_file = args(0)
-    //    val output_file = args(1)
+    val training_file_path = args(0)
+    val testing_file_path = args(1)
 
-    val text_train = spark.sparkContext.textFile("train_review.csv")
+    val text_train = spark.sparkContext.textFile(training_file_path)
     val header = text_train.first()
     val ratings = text_train
       .filter(line => !line.equals(header))
       .map(line => line.split(","))
       .map(attributes => Rating(assign_int_user_id(attributes(0).trim), assign_int_business_id(attributes(1).trim), attributes(2).trim.toDouble))
+    ratings.collect()
 
 
     // Evaluate the model on rating data
-    val text_test = spark.sparkContext.textFile("test_review.csv")
+    val text_test = spark.sparkContext.textFile(testing_file_path)
     val test_ratings = text_test
       .filter(line => !line.equals(header))
       .map(line => line.split(","))
       .map(attributes => Rating(assign_int_user_id(attributes(0).trim), assign_int_business_id(attributes(1).trim), attributes(2).trim.toDouble))
-
+    test_ratings.collect()
     // Build the recommendation model using ALS
     val rank = 20 // Can be changed for better performance
     val num_iterations = 20 // Can be changed for better performance

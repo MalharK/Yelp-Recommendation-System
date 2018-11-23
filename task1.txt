@@ -24,3 +24,8 @@ Mean Squared Error = 1.0755162537810259
 >=4: 0
 Mean Squared Error = 1.0762135475258454
 Time: 14 sec
+
+
+
+~/spark-2.3.1-bin-hadoop2.7/bin/spark-submit --class Malhar_Kulkarni_UserBasedCF --driver-memory 8g target/scala-2.11/assignment2_2.11-0.1.jar train_review.csv test_review.csv
+~/spark-2.3.1-bin-hadoop2.7/bin/spark-submit --class Malhar_Kulkarni_ModelBasedCF --driver-memory 8g target/scala-2.11/assignment2_2.11-0.1.jar train_review.csv test_review.csv
